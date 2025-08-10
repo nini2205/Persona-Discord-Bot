@@ -116,12 +116,15 @@ async def ping(interaction: discord.Interaction):
 async def on_ready():
     try:
         if guild_obj:
+            # 1) Instant for your test server
             tree.copy_global_to(guild=guild_obj)
-            cmds = await tree.sync(guild=guild_obj)
-            print(f"[READY] Synced {len(cmds)} cmds to guild {GUILD_ID} as {client.user}")
-        else:
-            cmds = await tree.sync()
-            print(f"[READY] Globally synced {len(cmds)} cmds as {client.user}")
+            g_cmds = await tree.sync(guild=guild_obj)
+            print(f"[READY] Instant guild sync -> {len(g_cmds)} cmds in {GUILD_ID}")
+
+        # 2) Also push global in parallel (may take up to ~1 hour to appear)
+        cmds = await tree.sync()
+        print(f"[READY] Global sync -> {len(cmds)} cmds as {client.user}")
+
     except Exception as e:
         print("[ERROR] Slash command sync failed:", e)
 
