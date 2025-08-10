@@ -3,6 +3,7 @@ import asyncio
 import discord
 from discord import app_commands, Embed
 from openai import OpenAI
+from openai import APIStatusError, RateLimitError, APIConnectionError, APIError
 
 # --- Env ---
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -30,7 +31,7 @@ client_oa = OpenAI(api_key=OPENAI_API_KEY)
 convos = {}
 
 DEFAULT_PERSONA = (
-    "You are Rio the Kitty Butler—warm, witty, concise. "
+    "You are Rin, a kind and helpful swim club captain. "
     "Be helpful and upbeat, avoid walls of text, and format responses cleanly. "
     "If the user asks for code, provide runnable snippets."
 )
@@ -38,12 +39,11 @@ DEFAULT_PERSONA = (
 def ensure_thread(user_id: int, persona: str | None = None):
     if user_id not in convos:
         convos[user_id] = [{"role": "system", "content": persona or DEFAULT_PERSONA}]
-    # keep history short to control cost
-    # retain system + last 12 messages max
+    # keep history short to control cost: keep system + last 12 msgs
     convos[user_id] = convos[user_id][:1] + convos[user_id][-12:]
 
 async def chat_openai(user_id: int, user_msg: str, model: str = "gpt-4o-mini"):
-    """Call OpenAI in a thread to avoid blocking the event loop."""
+    """Call OpenAI in a thread; return a friendly message on errors."""
     ensure_thread(user_id)
     convos[user_id].append({"role": "user", "content": user_msg})
 
@@ -54,10 +54,25 @@ async def chat_openai(user_id: int, user_msg: str, model: str = "gpt-4o-mini"):
             temperature=0.7,
         )
 
-    resp = await asyncio.to_thread(_call)
-    text = resp.choices[0].message.content or ""
-    convos[user_id].append({"role": "assistant", "content": text})
-    return text
+    try:
+        resp = await asyncio.to_thread(_call)
+        text = resp.choices[0].message.content or ""
+        convos[user_id].append({"role": "assistant", "content": text})
+        return text
+
+    # ----- Friendly error handling -----
+    except RateLimitError:
+        return ("⚠️ The bot’s AI quota is currently exhausted or rate-limited.\n"
+                "Please try again later (or top up billing).")
+    except APIStatusError as e:
+        # 4xx/5xx with JSON body
+        msg = getattr(e, "message", None) or "Something went wrong. Please try again soon."
+        return f"⚠️ OpenAI error {e.status}: {msg}"
+    except (APIConnectionError, APIError):
+        return "⚠️ I couldn’t reach the AI service. Please try again in a bit."
+    except Exception as e:
+        # Last-resort catch to keep bot alive
+        return f"⚠️ Unexpected error: {type(e).__name__}. Please try again."
 
 def chunk(s: str, n: int = 1900):
     # split long replies to respect Discord's 2000 char limit
@@ -85,6 +100,11 @@ async def chat(interaction: discord.Interaction, message: str):
     reply = await chat_openai(interaction.user.id, message)
     for part in chunk(reply):
         await interaction.followup.send(part)
+
+@tree.command(name="ai_health", description="Check AI connectivity.")
+async def ai_health(interaction: discord.Interaction):
+    ok = "✅" if OPENAI_API_KEY else "❌"
+    await interaction.response.send_message(f"API key: {ok} | Model: gpt-4o-mini")
 
 # Basic ping
 @tree.command(name="ping", description="Latency test.")
