@@ -28,8 +28,8 @@ GUILD_DAILY_LIMIT = int(os.getenv("GUILD_DAILY_LIMIT", "0") or 0)   # per-guild 
 
 # New: policy links / contact
 PRIVACY_URL = os.getenv("PRIVACY_URL")  # required for /privacy link; else fallback text
-# optional TOS_URL = os.getenv("TOS_URL")          
-# optional CONTACT = os.getenv("CONTACT", "the bot operator")
+optional TOS_URL = os.getenv("TOS_URL")          
+optional CONTACT = os.getenv("CONTACT", "the bot operator")
 
 # --- Discord client ---
 intents = discord.Intents.default()
