@@ -26,6 +26,11 @@ OWNER_ID = int(os.getenv("OWNER_ID", "0") or 0)
 DM_DAILY_LIMIT = int(os.getenv("DM_DAILY_LIMIT", "0") or 0)         # per-user, in DMs (0 = no cap)
 GUILD_DAILY_LIMIT = int(os.getenv("GUILD_DAILY_LIMIT", "0") or 0)   # per-guild cap/day (0 = no cap)
 
+# New: policy links / contact
+PRIVACY_URL = os.getenv("PRIVACY_URL")  # required for /privacy link; else fallback text
+# optional TOS_URL = os.getenv("TOS_URL")          
+# optional CONTACT = os.getenv("CONTACT", "the bot operator")
+
 # --- Discord client ---
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
@@ -189,6 +194,53 @@ async def guilds_cmd(interaction: discord.Interaction):
     names = [f"{g.name} ({g.id})" for g in client.guilds]
     text = "• " + "\n• ".join(names) if names else "No servers."
     await interaction.response.send_message(text, ephemeral=True)
+
+# ---------- NEW: Privacy/TOS commands ----------
+
+@tree.command(name="privacy", description="View the privacy policy and what we store.")
+async def privacy(interaction: discord.Interaction):
+    if PRIVACY_URL:
+        await interaction.response.send_message(
+            f"🔐 Privacy Policy: {PRIVACY_URL}",
+            ephemeral=True
+        )
+    else:
+        # Fallback mini-summary if you haven't set PRIVACY_URL
+        text = (
+            "🔐 **Privacy**\n"
+            "We process minimal data to run this bot (IDs, command text, usage counts, diagnostics). "
+            "Prompts may be sent to AI or API providers only to generate replies. "
+            "We don’t sell data or use it for ads. For questions, contact "
+            f"**{CONTACT}**."
+        )
+        await interaction.response.send_message(text, ephemeral=True)
+
+@tree.command(name="delete_my_data", description="Delete your conversation history & DM usage counters.")
+async def delete_my_data(interaction: discord.Interaction):
+    # Clear per-user memory and DM usage counters
+    had_convo = convos.pop(interaction.user.id, None) is not None
+    _reset_if_new_day()
+    prior_count = usage_dm.pop(interaction.user.id, 0)
+
+    await log_event("🗑️ Data Deletion Request", {
+        "User": f"{interaction.user} ({interaction.user.id})",
+        "Cleared convo": "yes" if had_convo else "no",
+        "Cleared DM count": str(prior_count)
+    })
+
+    msg = (
+        "✅ Deleted your conversation history and DM usage counters. "
+        "Operational logs rotate automatically after a short retention period."
+        f"{' For more, contact ' + CONTACT + '.' if CONTACT else ''}"
+    )
+    await interaction.response.send_message(msg, ephemeral=True)
+
+@tree.command(name="tos", description="View the Terms of Service.")
+async def tos(interaction: discord.Interaction):
+    if TOS_URL:
+        await interaction.response.send_message(f"📜 Terms of Service: {TOS_URL}", ephemeral=True)
+    else:
+        await interaction.response.send_message("📜 Terms of Service link is not set.", ephemeral=True)
 
 # ----------------- Server add/remove tracking -----------------
 
